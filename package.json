@@ -1,0 +1,51 @@
+{
+  "name": "task-executor",
+  "version": "0.0.1",
+  "description": "Implement concurrent task execution, progress control, error retry, etc. 实现任务的并发执行、进度控制、错误重试等",
+  "main": "dist/cjs/index.js",
+  "module": "dist/es/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "require": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/cjs/index.js"
+    },
+    "types": "./dist/index.d.ts",
+    "default": "./dist/es/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "authors": [
+    "linktodream@163.com"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "compiled"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "typescript": "^5.9.3",
+    "vite": "npm:rolldown-vite@7.2.5",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "npm:rolldown-vite@7.2.5"
+    }
+  },
+  "packageManager": "pnpm@8.15.5+sha1.a58c038faac410c947dbdb93eb30994037d0fce2",
+  "peerDependencies": {
+    "mitt": "^3.0.1",
+    "p-limit": "^7.2.0",
+    "radashi": "^12.7.1"
+  }
+}
