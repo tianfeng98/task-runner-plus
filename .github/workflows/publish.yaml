@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,17 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: latest
+          version: 10
+          run_install: |
+            - recursive: true
+              args: [--strict-peer-dependencies]
+            - args: [--global, gulp, prettier, typescript]
 
       - name: Install dependencies
         run: pnpm install
@@ -39,6 +37,6 @@ jobs:
 
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/')
-        run: npm publish
+        run: pnpm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
