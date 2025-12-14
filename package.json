@@ -1,5 +1,5 @@
 {
-  "name": "task-executor",
+  "name": "task-runner-plus",
   "version": "0.0.1",
   "description": "Implement concurrent task execution, progress control, error retry, etc. 实现任务的并发执行、进度控制、错误重试等",
   "main": "dist/cjs/index.js",
@@ -17,16 +17,30 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test --experimental-specifier-resolution=node test/**/*.test.js"
   },
-  "keywords": [],
-  "authors": [
-    "linktodream@163.com"
+  "keywords": [
+    "task",
+    "executor",
+    "concurrent",
+    "concurrency",
+    "async",
+    "progress",
+    "retry"
   ],
+  "author": "linktodream@163.com",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tianfeng98/task-runner-plus.git"
+  },
+  "homepage": "https://github.com/tianfeng98/task-runner-plus#readme",
+  "bugs": {
+    "url": "https://github.com/tianfeng98/task-runner-plus/issues"
+  },
   "files": [
-    "dist",
-    "compiled"
+    "dist"
   ],
   "publishConfig": {
     "access": "public"

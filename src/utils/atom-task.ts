@@ -10,7 +10,7 @@ export enum AtomTaskStatus {
 export type AtomTaskExec = (input: {
   exitRetry: (err: any) => void;
   signal: AbortSignal;
-}) => Promise<void>;
+}) => Promise<any> | void;
 
 export interface AtomTaskOptions {
   retryTimes?: number;

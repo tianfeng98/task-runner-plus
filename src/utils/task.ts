@@ -1,6 +1,6 @@
 import mitt, { type EventType } from "mitt";
 import plimit, { type LimitFunction } from "p-limit";
-import { get, set, uid } from "radashi";
+import { uid } from "radashi";
 import {
   AtomTask,
   AtomTaskStatus,
@@ -33,6 +33,7 @@ export interface TaskInfo<ExtInfo = any> {
   percent: number;
   extInfo?: ExtInfo;
   error?: TaskError;
+  atomTaskInfoList?: { status: AtomTaskStatus; errorMsg?: string }[];
 }
 
 export interface TaskEvent<ExtInfo = any> extends Record<EventType, any> {
@@ -42,7 +43,7 @@ export interface TaskEvent<ExtInfo = any> extends Record<EventType, any> {
   error: { taskInfo: TaskInfo<ExtInfo>; error: Error };
   start: { taskInfo: TaskInfo<ExtInfo> };
   pause: { taskInfo: TaskInfo<ExtInfo> };
-  continue: { taskInfo: TaskInfo<ExtInfo> };
+  resume: { taskInfo: TaskInfo<ExtInfo> };
   cancel: { taskInfo: TaskInfo<ExtInfo> };
   restart: { taskInfo: TaskInfo<ExtInfo> };
 }
@@ -52,30 +53,50 @@ export interface TaskOptions {
 }
 
 export class Task<ExtInfo = any> implements TaskInfo {
-  id: string = uid(24);
+  id: string;
   name?: string;
   description?: string;
-  createdAt = Date.now();
+  createdAt: number;
   completedAt?: number;
-  status = TaskStatus.Pending;
-  percent = 0;
+  status: TaskStatus;
+  percent: number;
   extInfo?: ExtInfo;
   error?: TaskError;
-  private event = mitt<TaskEvent>();
+  event = mitt<TaskEvent>();
   private atomTasks?: AtomTask[];
   private limit: LimitFunction;
+  private promise: Promise<TaskInfo<ExtInfo>>;
+  private resolve?: (value: TaskInfo<ExtInfo>) => void;
+  private reject?: (reason?: any) => void;
 
   constructor(
-    params: Partial<TaskInfo>,
+    {
+      id = uid(24),
+      name,
+      description,
+      createdAt = Date.now(),
+      completedAt,
+      status = TaskStatus.Pending,
+      percent = 0,
+      extInfo,
+      error,
+    }: Partial<Omit<TaskInfo, "atomTaskInfoList">> = {},
     { concurrency = 1 }: TaskOptions = {}
   ) {
+    this.id = id;
+    this.name = name;
+    this.description = description;
+    this.status = status;
+    this.percent = percent;
+    this.createdAt = createdAt;
+    this.completedAt = completedAt;
+    this.extInfo = extInfo;
+    this.error = error;
     this.limit = plimit(concurrency);
-    for (const key in params) {
-      const value = get(params, key);
-      if (value) {
-        set(this, key, value);
-      }
-    }
+    this.promise = new Promise<TaskInfo<ExtInfo>>((res, rej) => {
+      this.resolve = res;
+      this.reject = rej;
+    });
   }
 
   private static TaskMap = new Map<string, Task>();
@@ -94,6 +115,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
       completedAt,
       extInfo,
       error,
+      atomTasks,
     } = this;
     return {
       id,
@@ -104,6 +126,10 @@ export class Task<ExtInfo = any> implements TaskInfo {
       completedAt,
       extInfo,
       error,
+      atomTaskInfoList: atomTasks?.map((d) => ({
+        status: d.getStatus(),
+        errorMsg: d.getErrorMsg(),
+      })),
     };
   }
 
@@ -143,12 +169,12 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.event.emit("pause", { taskInfo: this.getInfo() });
   }
 
-  public continue() {
+  public resume() {
     if (this.status !== TaskStatus.Paused) {
-      throw new Error("Task is not paused, cannot continue");
+      throw new Error("Task is not paused, cannot resume");
     }
     this.status = TaskStatus.Running;
-    this.event.emit("continue", { taskInfo: this.getInfo() });
+    this.event.emit("resume", { taskInfo: this.getInfo() });
     this.runAtomTasks();
   }
 
@@ -166,6 +192,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.limit.clearQueue();
     this.status = TaskStatus.Cancel;
     this.event.emit("cancel", { taskInfo: this.getInfo() });
+    this.reject?.("cancel");
   }
 
   public restart() {
@@ -177,7 +204,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
     }
     this.status = TaskStatus.Running;
     this.event.emit("restart", { taskInfo: this.getInfo() });
-    this.runAtomTasks();
+    this.runAtomTasks({ restart: true });
   }
 
   public failed(error: Error | string) {
@@ -192,6 +219,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
       taskInfo: this.getInfo(),
     });
     this.clear();
+    this.reject?.("error");
   }
 
   public complete() {
@@ -203,6 +231,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.completedAt = Date.now();
     this.event.emit("complete", { taskInfo: this.getInfo() });
     this.clear();
+    this.resolve?.(this.getInfo());
   }
 
   public remove() {
@@ -222,6 +251,10 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.clear();
   }
 
+  public waitForEnd() {
+    return this.promise;
+  }
+
   private clear() {
     if (this.limit.activeCount > 0 || this.limit.pendingCount > 0) {
       this.limit.clearQueue();
@@ -234,24 +267,29 @@ export class Task<ExtInfo = any> implements TaskInfo {
     }, 1000);
   }
 
-  private runAtomTasks() {
-    const atomTasks = this.atomTasks;
-    if (Array.isArray(atomTasks)) {
-      const allTasks = atomTasks.length;
-      Promise.all(
-        atomTasks
-          .filter((task) => task.getStatus() === AtomTaskStatus.Pending)
-          .map((atomTask) => {
-            this.limit(() =>
-              atomTask.run().finally(() => {
-                const finishCount = atomTasks.filter(
-                  (task) => task.getStatus() === AtomTaskStatus.Completed
-                ).length;
-                this.percent += (finishCount / allTasks) * 100;
-              })
-            );
+  private runAtomTasks({
+    restart = false,
+  }: {
+    restart?: boolean;
+  } = {}) {
+    if (Array.isArray(this.atomTasks)) {
+      const allTasks = this.atomTasks.length;
+      const atomTasks = restart
+        ? this.atomTasks
+        : this.atomTasks.filter(
+            (task) => task.getStatus() === AtomTaskStatus.Pending
+          );
+      const input = atomTasks.map((atomTask) =>
+        this.limit(() =>
+          atomTask.run().finally(() => {
+            const finishCount = atomTasks.filter(
+              (task) => task.getStatus() === AtomTaskStatus.Completed
+            ).length;
+            this.setPercent((finishCount / allTasks) * 100);
           })
-      ).finally(() => {
+        )
+      );
+      Promise.all(input).finally(() => {
         const failedTasks = atomTasks.filter(
           (task) => task.getStatus() === AtomTaskStatus.Failed
         );
