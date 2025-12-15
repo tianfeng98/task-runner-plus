@@ -1,33 +1,29 @@
 name: Publish Npm Package
 
 on:
-  release:
-    types: [created] # 仅当创建 Release 时触发
   push:
-    branches:
-      - main #仅当 push 到 main 分支时触发
+    tags:
+      - "v*"
   workflow_dispatch: # 手动触发工作流
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm install
-      - run: npm run build
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
 
-  publish-npm:
-    needs: build
+jobs:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org/
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # Ensure npm 11.5.1 or later is installed
+      - name: Update npm
+        run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run build --if-present
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
