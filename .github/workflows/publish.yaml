@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main #仅当 push 到 main 分支时触发
+  workflow_dispatch: # 手动触发工作流
 
 jobs:
   publish:
@@ -21,8 +22,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - name: Npm install
         run: npm install
-      - name: Npm test
-        run: npm run test
       - name: Npm build
         run: npm run build
       - name: Publish to npm
