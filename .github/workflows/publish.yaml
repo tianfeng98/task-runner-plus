@@ -1,41 +1,31 @@
-name: Publish to npm
+name: Publish Npm Package
 
 on:
+  release:
+    types: [created] # 仅当创建 Release 时触发
   push:
     branches:
-      - main
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+      - main #仅当 push 到 main 分支时触发
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          run_install: |
-            - recursive: true
-              args: [--strict-peer-dependencies]
-            - args: [--global, gulp, prettier, typescript]
-
-      - name: Install dependencies
-        run: pnpm install
-
-      #   - name: Run tests
-      #     run: pnpm test
-
-      - name: Build project
-        run: pnpm build
-
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+      - name: Npm install
+        run: npm install
+      - name: Npm test
+        run: npm run test
+      - name: Npm build
+        run: npm run build
       - name: Publish to npm
-        if: startsWith(github.ref, 'refs/tags/')
-        run: pnpm publish
+        run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
