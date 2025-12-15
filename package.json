@@ -18,7 +18,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test --experimental-specifier-resolution=node test/**/*.test.js"
+    "test": "node --test --experimental-specifier-resolution=node test/**/*.test.js",
+    "publish": "pnpm build && npm publish --no-git-checks"
   },
   "keywords": [
     "task",
@@ -43,7 +44,8 @@
     "dist"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
     "@types/node": "^24.10.2",
