@@ -1,6 +1,6 @@
 {
   "name": "task-runner-plus",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Implement concurrent task execution, progress control, error retry, etc. 实现任务的并发执行、进度控制、错误重试等",
   "main": "dist/cjs/index.js",
   "module": "dist/es/index.js",
@@ -18,8 +18,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test --experimental-specifier-resolution=node test/**/*.test.js",
-    "publish": "pnpm build && npm publish --no-git-checks"
+    "test": "node --test --experimental-specifier-resolution=node test/**/*.test.js"
   },
   "keywords": [
     "task",
