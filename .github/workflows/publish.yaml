@@ -15,11 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
 
-      - run: npm install
-      - run: npm run build
-      - run: npm publish --provenance --no-git-checks
+      - run: pnpm install
+      - run: pnpm run build
+      - run: npm publish --provenance --access public --no-git-checks
