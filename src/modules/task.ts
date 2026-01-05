@@ -1,16 +1,19 @@
 import mitt, { type EventType } from "mitt";
 import plimit, { type LimitFunction } from "p-limit";
 import { uid } from "radashi";
+import { promiseFor } from "../utils";
 import {
   AtomTask,
   AtomTaskStatus,
-  type AtomTaskExec,
-  type AtomTaskOptions,
+  type AtomTaskInfo,
+  type TaskCtx,
 } from "./atom-task";
 
 export enum TaskStatus {
   Pending = "PENDING",
   Running = "RUNNING",
+  // 暂停中状态，暂停状态需要等待正在执行的原子任务完成
+  Pausing = "Pausing",
   Paused = "PAUSED",
   Cancel = "CANCEL",
   Completed = "COMPLETED",
@@ -26,18 +29,28 @@ export interface TaskError {
 export interface TaskInfo<ExtInfo = any> {
   id: string;
   name?: string;
+  /**
+   * 任务描述
+   */
   description?: string;
   createdAt: number;
   completedAt?: number;
   status: TaskStatus;
   percent: number;
   extInfo?: ExtInfo;
+  /**
+   * 任务执行过程中遇到的错误信息
+   */
   error?: TaskError;
-  atomTaskInfoList?: { status: AtomTaskStatus; errorMsg?: string }[];
+  /**
+   * 任务执行过程信息
+   */
+  taskMsg?: string;
+  atomTaskInfoList: AtomTaskInfo[];
 }
 
 export interface TaskEvent<ExtInfo = any> extends Record<EventType, any> {
-  percent: { percent: number; taskInfo: TaskInfo<ExtInfo> };
+  progress: { percent: number; taskInfo: TaskInfo<ExtInfo> };
   complete: { taskInfo: TaskInfo<ExtInfo> };
   remove: { taskInfo: TaskInfo<ExtInfo> };
   error: { taskInfo: TaskInfo<ExtInfo>; error: Error };
@@ -48,11 +61,12 @@ export interface TaskEvent<ExtInfo = any> extends Record<EventType, any> {
   restart: { taskInfo: TaskInfo<ExtInfo> };
 }
 
-export interface TaskOptions {
+export interface TaskOptions<Ctx extends Record<string, any> = any> {
   concurrency?: number;
+  ctx?: Ctx;
 }
 
-export class Task<ExtInfo = any> implements TaskInfo {
+export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
   id: string;
   name?: string;
   description?: string;
@@ -62,8 +76,10 @@ export class Task<ExtInfo = any> implements TaskInfo {
   percent: number;
   extInfo?: ExtInfo;
   error?: TaskError;
+  taskMsg?: string;
   event = mitt<TaskEvent>();
-  private atomTasks?: AtomTask[];
+  private ctx: TaskCtx<Ctx>;
+  private atomTasks: AtomTask<Ctx>[] = [];
   private limit: LimitFunction;
   private promise: Promise<TaskInfo<ExtInfo>>;
   private resolve?: (value: TaskInfo<ExtInfo>) => void;
@@ -81,7 +97,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
       extInfo,
       error,
     }: Partial<Omit<TaskInfo, "atomTaskInfoList">> = {},
-    { concurrency = 1 }: TaskOptions = {}
+    { concurrency = 1, ctx = {} as Ctx }: TaskOptions<Ctx> = {}
   ) {
     this.id = id;
     this.name = name;
@@ -92,6 +108,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.completedAt = completedAt;
     this.extInfo = extInfo;
     this.error = error;
+    this.ctx = { ...ctx, addAtomTasks: this.addAtomTasks.bind(this) };
     this.limit = plimit(concurrency);
     this.promise = new Promise<TaskInfo<ExtInfo>>((res, rej) => {
       this.resolve = res;
@@ -105,6 +122,10 @@ export class Task<ExtInfo = any> implements TaskInfo {
     return this.TaskMap.get(id);
   }
 
+  public getCtx(): TaskCtx<Ctx> {
+    return this.ctx;
+  }
+
   public getInfo(): TaskInfo<ExtInfo> {
     const {
       id,
@@ -115,6 +136,7 @@ export class Task<ExtInfo = any> implements TaskInfo {
       completedAt,
       extInfo,
       error,
+      taskMsg,
       atomTasks,
     } = this;
     return {
@@ -126,20 +148,33 @@ export class Task<ExtInfo = any> implements TaskInfo {
       completedAt,
       extInfo,
       error,
-      atomTaskInfoList: atomTasks?.map((d) => ({
-        status: d.getStatus(),
-        errorMsg: d.getErrorMsg(),
-      })),
+      taskMsg,
+      atomTaskInfoList: atomTasks.map((d) => d.getAtomTaskInfo()),
     };
   }
 
-  public setAtomTasks(
-    atomTaskConfig: [exec: AtomTaskExec, options?: AtomTaskOptions][]
-  ) {
-    this.atomTasks = atomTaskConfig.map(
-      ([exec, options], index) =>
-        new AtomTask({ exec, errorMsg: `AtomTask ${index} failed` }, options)
-    );
+  public setAtomTasks(atomTasks: AtomTask<Ctx>[]) {
+    if (!Array.isArray(atomTasks)) {
+      throw new Error("atomTasks must be an array");
+    }
+    this.atomTasks = atomTasks;
+  }
+
+  public addAtomTasks(atomTasks: AtomTask<Ctx>[]) {
+    switch (this.status) {
+      case TaskStatus.Pending:
+      case TaskStatus.Completed:
+        this.atomTasks.push(...atomTasks);
+        break;
+      case TaskStatus.Running:
+        this.pause().then(() => {
+          this.atomTasks.push(...atomTasks);
+          this.resume();
+        });
+        break;
+      default:
+        throw new Error(`Task status ${this.status} cannot add atom tasks`);
+    }
   }
 
   public updateExtInfo(info: ExtInfo) {
@@ -148,7 +183,11 @@ export class Task<ExtInfo = any> implements TaskInfo {
 
   public setPercent(percent: number) {
     this.percent = percent;
-    this.event.emit("percent", { percent, taskInfo: this.getInfo() });
+    this.event.emit("progress", { percent, taskInfo: this.getInfo() });
+  }
+
+  public setTaskMsg(msg?: string) {
+    this.taskMsg = msg;
   }
 
   public start() {
@@ -160,13 +199,22 @@ export class Task<ExtInfo = any> implements TaskInfo {
     this.runAtomTasks();
   }
 
-  public pause() {
+  public async pause() {
     if (this.status !== TaskStatus.Running) {
       throw new Error("Task is not running, cannot pause");
     }
+    this.status = TaskStatus.Pausing;
     this.limit.clearQueue();
-    this.status = TaskStatus.Paused;
-    this.event.emit("pause", { taskInfo: this.getInfo() });
+    return promiseFor(
+      () => this.limit.activeCount < 1,
+      () => true,
+      {
+        timeout: 60 * 1000,
+      }
+    ).finally(() => {
+      this.status = TaskStatus.Paused;
+      this.event.emit("pause", { taskInfo: this.getInfo() });
+    });
   }
 
   public resume() {
@@ -272,31 +320,56 @@ export class Task<ExtInfo = any> implements TaskInfo {
   }: {
     restart?: boolean;
   } = {}) {
-    if (Array.isArray(this.atomTasks)) {
-      const allTasks = this.atomTasks.length;
+    const atomTasksCount = this.atomTasks.length;
+    if (atomTasksCount > 0) {
+      this.setTaskMsg(this.atomTasks.at(0)?.getAtomTaskInfo().processMsg);
       const atomTasks = restart
         ? this.atomTasks
         : this.atomTasks.filter(
-            (task) => task.getStatus() === AtomTaskStatus.Pending
+            (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Pending
           );
       const input = atomTasks.map((atomTask) =>
         this.limit(() =>
-          atomTask.run().finally(() => {
-            const finishCount = atomTasks.filter(
-              (task) => task.getStatus() === AtomTaskStatus.Completed
-            ).length;
-            this.setPercent((finishCount / allTasks) * 100);
-          })
+          atomTask
+            .run(this.ctx)
+            .then(({ status }) => {
+              switch (status) {
+                case AtomTaskStatus.Completed:
+                  this.setTaskMsg(atomTask.getAtomTaskInfo().successMsg);
+                  break;
+                case AtomTaskStatus.Failed:
+                  this.setTaskMsg(atomTask.getAtomTaskInfo().errorMsg);
+                  break;
+                default:
+                  break;
+              }
+            })
+            .finally(() => {
+              /**
+               * @TODO 动态增加任务时，会导致任务进度计算错误
+               */
+              const finishCount = atomTasks.filter(
+                (task) =>
+                  task.getAtomTaskInfo().status === AtomTaskStatus.Completed
+              ).length;
+              this.setPercent((finishCount / atomTasksCount) * 100);
+            })
         )
       );
       Promise.all(input).finally(() => {
         const failedTasks = atomTasks.filter(
-          (task) => task.getStatus() === AtomTaskStatus.Failed
+          (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Failed
         );
-        if (failedTasks.length === 0) {
-          this.complete();
-        } else {
-          this.failed(failedTasks.map((task) => task.getErrorMsg()).join(", "));
+        if (this.status === TaskStatus.Running) {
+          if (failedTasks.length === 0) {
+            this.complete();
+          } else {
+            this.failed(
+              failedTasks
+                .map((task) => task.getAtomTaskInfo().errorMsg)
+                .join(", ")
+            );
+          }
         }
       });
     }
