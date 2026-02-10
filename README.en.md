@@ -18,6 +18,7 @@ task-runner-plus is a lightweight task execution library for managing concurrent
 - ✅ **Event Listening**: Rich event hooks for monitoring task status changes
 - ✅ **Atomic Tasks**: Support breaking complex tasks into multiple atomic tasks
 - ✅ **TypeScript Support**: Complete TypeScript type definitions
+- ✅ **Dynamic Atomic Tasks**: Support dynamically adding and removing atomic tasks during task execution
 
 ## Installation
 
@@ -106,15 +107,17 @@ import { Task, AtomTask } from "task-runner-plus";
 const task = new Task({}, { concurrency: 2 });
 
 // Set multiple atomic tasks
-const atomTasks = Array.from({ length: 5 }, (_, index) =>
-  new AtomTask({
-    exec: async ({ signal }) => {
-      console.log(`Executing atomic task ${index + 1}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    },
-    processMsg: `Executing task ${index + 1}...`,
-    successMsg: `Task ${index + 1} completed`,
-  })
+const atomTasks = Array.from(
+  { length: 5 },
+  (_, index) =>
+    new AtomTask({
+      exec: async ({ signal }) => {
+        console.log(`Executing atomic task ${index + 1}`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      },
+      processMsg: `Executing task ${index + 1}...`,
+      successMsg: `Task ${index + 1} completed`,
+    }),
 );
 
 task.setAtomTasks(atomTasks);
@@ -145,75 +148,75 @@ new Task(params?: Partial<TaskInfo>, options?: TaskOptions)
 
 #### Methods
 
-| Method                                      | Description         | Parameter                         | Return Value           |
-| ------------------------------------------- | ------------------- | ---------------------------------- | ---------------------- |
-| `getInfo()`                                 | Get task info       | None                               | `TaskInfo`             |
-| `getCtx()`                                  | Get task context    | None                               | `TaskCtx<Ctx>`         |
-| `updateExtInfo(info: ExtInfo)`              | Update extended info| `info: ExtInfo`                    | None                   |
-| `setProgress(percent: number)`              | Set task progress   | `percent: number`                  | None                   |
-| `setTaskMsg(msg: string)`                   | Set task message    | `msg: string`                      | None                   |
-| `setAtomTasks(atomTasks: AtomTask<Ctx>[])`  | Set atomic tasks    | `atomTasks: AtomTask<Ctx>[]`       | None                   |
-| `addAtomTasks(atomTasks: AtomTask<Ctx>[])`  | Add atomic tasks    | `atomTasks: AtomTask<Ctx>[]`       | None                   |
-| `start()`                                   | Start task          | None                               | None                   |
-| `pause()`                                   | Pause task          | None                               | `Promise<void>`        |
-| `resume()`                                  | Resume task         | None                               | None                   |
-| `cancel()`                                  | Cancel task         | None                               | None                   |
-| `restart()`                                 | Restart task        | None                               | None                   |
-| `failed(error: Error \| string)`            | Mark task failed    | `error: Error \| string`           | None                   |
-| `complete()`                                | Mark task complete  | None                               | None                   |
-| `remove()`                                  | Remove task         | None                               | None                   |
-| `waitForEnd()`                              | Wait for task end   | None                               | `Promise<TaskInfo>`    |
+| Method                                     | Description          | Parameter                    | Return Value        |
+| ------------------------------------------ | -------------------- | ---------------------------- | ------------------- |
+| `getInfo()`                                | Get task info        | None                         | `TaskInfo`          |
+| `getCtx()`                                 | Get task context     | None                         | `TaskCtx<Ctx>`      |
+| `updateExtInfo(info: ExtInfo)`             | Update extended info | `info: ExtInfo`              | None                |
+| `setProgress(percent: number)`             | Set task progress    | `percent: number`            | None                |
+| `setTaskMsg(msg: string)`                  | Set task message     | `msg: string`                | None                |
+| `setAtomTasks(atomTasks: AtomTask<Ctx>[])` | Set atomic tasks     | `atomTasks: AtomTask<Ctx>[]` | None                |
+| `addAtomTasks(atomTasks: AtomTask<Ctx>[])` | Add atomic tasks     | `atomTasks: AtomTask<Ctx>[]` | None                |
+| `start()`                                  | Start task           | None                         | None                |
+| `pause()`                                  | Pause task           | None                         | `Promise<void>`     |
+| `resume()`                                 | Resume task          | None                         | None                |
+| `cancel()`                                 | Cancel task          | None                         | None                |
+| `restart()`                                | Restart task         | None                         | None                |
+| `failed(error: Error \| string)`           | Mark task failed     | `error: Error \| string`     | None                |
+| `complete()`                               | Mark task complete   | None                         | None                |
+| `remove()`                                 | Remove task          | None                         | None                |
+| `waitForEnd()`                             | Wait for task end    | None                         | `Promise<TaskInfo>` |
 
 #### Events
 
-| Event     | Description               | Callback Parameter                   |
-| --------- | ------------------------- | ------------------------------------ |
-| `start`   | Triggered when task starts| `{ taskInfo: TaskInfo }`             |
-| `pause`   | Triggered when task pauses| `{ taskInfo: TaskInfo }`             |
-| `resume`  | Triggered when task resumes| `{ taskInfo: TaskInfo }`             |
-| `cancel`  | Triggered when task cancels| `{ taskInfo: TaskInfo }`             |
-| `complete`| Triggered when task completes| `{ taskInfo: TaskInfo }`             |
-| `error`   | Triggered when task fails | `{ taskInfo: TaskInfo, error: Error }`|
-| `restart` | Triggered when task restarts| `{ taskInfo: TaskInfo }`             |
-| `remove`  | Triggered when task is removed| `{ taskInfo: TaskInfo }`             |
-| `progress`| Triggered on progress update| `{ percent: number, taskInfo: TaskInfo }` |
+| Event      | Description                    | Callback Parameter                        |
+| ---------- | ------------------------------ | ----------------------------------------- |
+| `start`    | Triggered when task starts     | `{ taskInfo: TaskInfo }`                  |
+| `pause`    | Triggered when task pauses     | `{ taskInfo: TaskInfo }`                  |
+| `resume`   | Triggered when task resumes    | `{ taskInfo: TaskInfo }`                  |
+| `cancel`   | Triggered when task cancels    | `{ taskInfo: TaskInfo }`                  |
+| `complete` | Triggered when task completes  | `{ taskInfo: TaskInfo }`                  |
+| `error`    | Triggered when task fails      | `{ taskInfo: TaskInfo, error: Error }`    |
+| `restart`  | Triggered when task restarts   | `{ taskInfo: TaskInfo }`                  |
+| `remove`   | Triggered when task is removed | `{ taskInfo: TaskInfo }`                  |
+| `progress` | Triggered on progress update   | `{ percent: number, taskInfo: TaskInfo }` |
 
 ### Task Status
 
-| Status    | Description                      |
-| --------- | -------------------------------- |
-| `Pending` | Task is pending execution        |
-| `Running` | Task is currently executing      |
-| `Pausing` | Task is pausing (waiting for running tasks to complete)|
-| `Paused`  | Task is paused                   |
-| `Completed`| Task completed successfully     |
-| `Failed`  | Task execution failed            |
-| `Cancel`  | Task was cancelled               |
-| `Removed` | Task was removed                 |
+| Status      | Description                                             |
+| ----------- | ------------------------------------------------------- |
+| `Pending`   | Task is pending execution                               |
+| `Running`   | Task is currently executing                             |
+| `Pausing`   | Task is pausing (waiting for running tasks to complete) |
+| `Paused`    | Task is paused                                          |
+| `Completed` | Task completed successfully                             |
+| `Failed`    | Task execution failed                                   |
+| `Cancel`    | Task was cancelled                                      |
+| `Removed`   | Task was removed                                        |
 
 ### Task Info
 
 `TaskInfo` contains the following fields:
 
-| Field              | Type              | Description                     |
-| ------------------ | ----------------- | ------------------------------- |
-| `id`               | `string`          | Unique task identifier          |
-| `name`             | `string?`         | Task name                       |
-| `description`      | `string?`         | Task description                |
-| `createdAt`        | `number`          | Creation timestamp              |
-| `completedAt`      | `number?`         | Completion timestamp            |
-| `status`           | `TaskStatus`      | Task status                     |
-| `percent`          | `number`          | Completion progress percentage  |
-| `extInfo`          | `ExtInfo?`        | Extended information            |
-| `error`            | `TaskError?`      | Error information               |
-| `taskMsg`          | `string?`         | Task execution message          |
-| `atomTaskInfoList` | `AtomTaskInfo[]`  | Atomic task execution info list |
+| Field              | Type             | Description                     |
+| ------------------ | ---------------- | ------------------------------- |
+| `id`               | `string`         | Unique task identifier          |
+| `name`             | `string?`        | Task name                       |
+| `description`      | `string?`        | Task description                |
+| `createdAt`        | `number`         | Creation timestamp              |
+| `completedAt`      | `number?`        | Completion timestamp            |
+| `status`           | `TaskStatus`     | Task status                     |
+| `percent`          | `number`         | Completion progress percentage  |
+| `extInfo`          | `ExtInfo?`       | Extended information            |
+| `error`            | `TaskError?`     | Error information               |
+| `taskMsg`          | `string?`        | Task execution message          |
+| `atomTaskInfoList` | `AtomTaskInfo[]` | Atomic task execution info list |
 
 ### Error Handling
 
 ```typescript
 interface TaskError {
-  name: string;    // Error name
+  name: string; // Error name
   message: string; // Error message
 }
 ```
@@ -234,7 +237,7 @@ const task = new Task(
         // Custom method
       },
     },
-  }
+  },
 );
 
 task.setAtomTasks([
@@ -248,7 +251,7 @@ task.setAtomTasks([
     {
       processMsg: "Fetching user data...",
       successMsg: "User data fetched successfully",
-    }
+    },
   ),
 ]);
 
@@ -259,7 +262,7 @@ task.start();
 
 Atomic tasks are the execution units of a Task, used to split complex tasks into manageable subtasks. Each atomic task can independently configure retry, timeout, and other options.
 
-#### Constructor
+#### AtomTask Constructor
 
 ```typescript
 new AtomTask<Ctx>(
@@ -303,32 +306,70 @@ type AtomTaskExec<Ctx> = (input: {
 
 #### Atomic Task Status
 
-| Status     | Description     |
-| ---------- | --------------- |
-| `PENDING`  | Waiting to execute |
-| `RUNNING`  | Currently executing |
-| `COMPLETED`| Execution completed |
-| `FAILED`   | Execution failed |
+| Status      | Description                              |
+| ----------- | ---------------------------------------- |
+| `PENDING`   | Waiting to execute                       |
+| `RUNNING`   | Currently executing                      |
+| `COMPLETED` | Execution completed                      |
+| `FAILED`    | Execution failed                         |
+| `WARNING`   | Warning status, task continues execution |
 
 #### Atomic Task Info
 
 `AtomTaskInfo` contains the following fields:
 
-| Field       | Type      | Description                         |
-| ----------- | --------- | ----------------------------------- |
-| `status`    | Enum      | Current status of the atomic task   |
-| `processMsg`| string?   | Message during execution            |
-| `successMsg`| string?   | Message on successful completion    |
-| `errorMsg`  | string?   | Error message on failure            |
+| Field        | Type    | Description                       |
+| ------------ | ------- | --------------------------------- |
+| `status`     | Enum    | Current status of the atomic task |
+| `processMsg` | string? | Message during execution          |
+| `successMsg` | string? | Message on successful completion  |
+| `errorMsg`   | string? | Error message on failure          |
 
-#### Methods
+#### Atomic Task Methods
 
-| Method               | Description           | Parameter              | Return Value             |
-| -------------------- | --------------------- | ---------------------- | ------------------------ |
-| `getAtomTaskInfo()`  | Get atomic task info  | None                   | `AtomTaskInfo`           |
-| `run(ctx)`           | Execute atomic task   | `ctx: TaskCtx<Ctx>`    | `Promise<AtomTaskInfo>`  |
+| Method              | Description          | Parameter           | Return Value            |
+| ------------------- | -------------------- | ------------------- | ----------------------- |
+| `getAtomTaskInfo()` | Get atomic task info | None                | `AtomTaskInfo`          |
+| `run(ctx)`          | Execute atomic task  | `ctx: TaskCtx<Ctx>` | `Promise<AtomTaskInfo>` |
 
-### Dynamically Adding Atomic Tasks
+### Task Message Function Context
+
+Task messages support function form, can access execution context:
+
+```typescript
+import { Task, AtomTask } from "task-runner-plus";
+
+const task = new Task({ name: "Message Function Example" });
+
+// Set atomic tasks with function-form messages
+task.setAtomTasks([
+  new AtomTask({
+    exec: async ({ ctx }) => {
+      // Store data in context
+      ctx.set("userId", 123);
+      ctx.set("userName", "John Doe");
+      await new Promise((r) => setTimeout(r, 1000));
+    },
+    // Function-form processMsg, can access ctx
+    processMsg: (ctx) => {
+      const userId = ctx.get("userId") || "unknown";
+      return `Processing task for user ${userId}...`;
+    },
+    // Function-form successMsg, can access ctx
+    successMsg: (ctx) => {
+      const userName = ctx.get("userName") || "unknown";
+      return `Task processed successfully for user ${userName}`;
+    },
+  }),
+]);
+
+// Start the task
+task.start();
+```
+
+### Dynamic Atomic Tasks
+
+#### Dynamically Adding Atomic Tasks
 
 Support for dynamically adding new atomic tasks during task execution:
 
@@ -366,6 +407,51 @@ task.event.on("complete", () => {
 task.start();
 ```
 
+#### Dynamically Removing Atomic Tasks
+
+Support for dynamically removing atomic tasks during task execution:
+
+```typescript
+import { Task, AtomTask } from "task-runner-plus";
+
+const task = new Task({ name: "Dynamic Remove Task Example" });
+
+// Create atomic tasks
+const atomTask1 = new AtomTask({
+  exec: async ({ signal }) => {
+    console.log("Executing first task");
+    await new Promise((r) => setTimeout(r, 2000)); // Simulate time-consuming operation
+  },
+  processMsg: "Executing first task...",
+  successMsg: "First task completed",
+});
+
+const atomTask2 = new AtomTask({
+  exec: async ({ signal }) => {
+    console.log("Executing second task");
+    await new Promise((r) => setTimeout(r, 1000));
+  },
+  processMsg: "Executing second task...",
+  successMsg: "Second task completed",
+});
+
+// Set atomic tasks
+task.setAtomTasks([atomTask1, atomTask2]);
+
+// Start the task
+task.start();
+
+// Remove the second task after some time
+setTimeout(async () => {
+  console.log("Removing second task");
+  await task.removeAtomTasks([atomTask2.id]);
+}, 500);
+
+// Wait for task completion
+await task.waitForEnd();
+// Only the first task will complete execution, the second task will be removed
+```
+
 ### promiseFor
 
 A utility function that waits for a condition to be satisfied before returning the result:
@@ -374,7 +460,7 @@ A utility function that waits for a condition to be satisfied before returning t
 function promiseFor<T>(
   condition: () => boolean,
   result: () => T,
-  options?: { timeout?: number; delay?: number }
+  options?: { timeout?: number; delay?: number },
 ): Promise<T>;
 ```
 
@@ -396,14 +482,14 @@ import { promiseFor } from "task-runner-plus";
 const element = await promiseFor(
   () => document.querySelector("#my-element") !== null,
   () => document.querySelector("#my-element"),
-  { timeout: 5000, delay: 100 }
+  { timeout: 5000, delay: 100 },
 );
 
 // Wait for async data to load
 const data = await promiseFor(
   () => store.isLoaded,
   () => store.data,
-  { timeout: 10000 }
+  { timeout: 10000 },
 );
 ```
 
@@ -412,25 +498,25 @@ const data = await promiseFor(
 ### Install Dependencies
 
 ```bash
-$ pnpm install
+pnpm install
 ```
 
 ### Development Mode
 
 ```bash
-$ pnpm run dev
+pnpm run dev
 ```
 
 ### Build
 
 ```bash
-$ pnpm run build
+pnpm run build
 ```
 
 ### Run Tests
 
 ```bash
-$ pnpm run test
+pnpm run test
 ```
 
 ## License

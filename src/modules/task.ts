@@ -1,72 +1,49 @@
-import mitt, { type EventType } from "mitt";
+import mitt from "mitt";
 import plimit, { type LimitFunction } from "p-limit";
-import { uid } from "radashi";
-import { promiseFor } from "../utils";
+import { uid, withResolvers } from "radashi";
 import {
-  AtomTask,
+  AbstractAtomTask,
+  AbstractTask,
+  AbstractTaskCtx,
   AtomTaskStatus,
-  type AtomTaskInfo,
-  type TaskCtx,
-} from "./atom-task";
+  TaskStatus,
+  type Ctx,
+  type TaskError,
+  type TaskEvent,
+  type TaskInfo,
+  type TaskOptions,
+} from "../types";
+import { promiseFor } from "../utils";
+import { TaskCtx } from "./ctx";
 
-export enum TaskStatus {
-  Pending = "PENDING",
-  Running = "RUNNING",
-  // 暂停中状态，暂停状态需要等待正在执行的原子任务完成
-  Pausing = "Pausing",
-  Paused = "PAUSED",
-  Cancel = "CANCEL",
-  Completed = "COMPLETED",
-  Failed = "FAILED",
-  Removed = "REMOVED",
+// 创建只允许通过 set 方法修改的代理
+function createReadOnlyCtxProxy<T extends Record<string, any>>(
+  sourceCtx: AbstractTaskCtx<T>,
+): AbstractTaskCtx<T> {
+  return new Proxy(sourceCtx, {
+    set(_, prop, __) {
+      // 禁止直接赋值
+      console.warn(
+        `Direct assignment to ctx.${String(prop)} is not allowed. Use ctx.set() instead.`,
+      );
+      return false;
+    },
+    get(target, prop) {
+      // 允许访问所有方法和属性
+      const value = Reflect.get(target, prop);
+      // 如果是函数，绑定正确的 this
+      if (typeof value === "function") {
+        return value.bind(target);
+      }
+      return value;
+    },
+  });
 }
 
-export interface TaskError {
-  name: string;
-  message: string;
-}
-
-export interface TaskInfo<ExtInfo = any> {
-  id: string;
-  name?: string;
-  /**
-   * 任务描述
-   */
-  description?: string;
-  createdAt: number;
-  completedAt?: number;
-  status: TaskStatus;
-  percent: number;
-  extInfo?: ExtInfo;
-  /**
-   * 任务执行过程中遇到的错误信息
-   */
-  error?: TaskError;
-  /**
-   * 任务执行过程信息
-   */
-  taskMsg?: string;
-  atomTaskInfoList: AtomTaskInfo[];
-}
-
-export interface TaskEvent<ExtInfo = any> extends Record<EventType, any> {
-  progress: { percent: number; taskInfo: TaskInfo<ExtInfo> };
-  complete: { taskInfo: TaskInfo<ExtInfo> };
-  remove: { taskInfo: TaskInfo<ExtInfo> };
-  error: { taskInfo: TaskInfo<ExtInfo>; error: Error };
-  start: { taskInfo: TaskInfo<ExtInfo> };
-  pause: { taskInfo: TaskInfo<ExtInfo> };
-  resume: { taskInfo: TaskInfo<ExtInfo> };
-  cancel: { taskInfo: TaskInfo<ExtInfo> };
-  restart: { taskInfo: TaskInfo<ExtInfo> };
-}
-
-export interface TaskOptions<Ctx extends Record<string, any> = any> {
-  concurrency?: number;
-  ctx?: Ctx;
-}
-
-export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
+export class Task<T extends Ctx, ExtInfo = any> extends AbstractTask<
+  T,
+  ExtInfo
+> {
   id: string;
   name?: string;
   description?: string;
@@ -77,13 +54,15 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
   extInfo?: ExtInfo;
   error?: TaskError;
   taskMsg?: string;
-  event = mitt<TaskEvent>();
-  private ctx: TaskCtx<Ctx>;
-  private atomTasks: AtomTask<Ctx>[] = [];
-  private limit: LimitFunction;
-  private promise: Promise<TaskInfo<ExtInfo>>;
-  private resolve?: (value: TaskInfo<ExtInfo>) => void;
-  private reject?: (reason?: any) => void;
+  event = mitt<TaskEvent<T, ExtInfo>>();
+  protected readonly ctx: AbstractTaskCtx<T>;
+  protected atomTasks: AbstractAtomTask<T>[] = [];
+  protected limit: LimitFunction;
+
+  // 使用promise
+  protected promise: Promise<TaskInfo<T, ExtInfo>>;
+  protected resolve?: (value: TaskInfo<T, ExtInfo>) => void;
+  protected reject?: (reason?: any) => void;
 
   constructor(
     {
@@ -96,9 +75,10 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       percent = 0,
       extInfo,
       error,
-    }: Partial<Omit<TaskInfo, "atomTaskInfoList">> = {},
-    { concurrency = 1, ctx = {} as Ctx }: TaskOptions<Ctx> = {}
+    }: Partial<Omit<TaskInfo<T, ExtInfo>, "atomTaskInfoList">> = {},
+    { concurrency = 1, defaultCtxData, sharedCtx }: TaskOptions<T> = {},
   ) {
+    super();
     this.id = id;
     this.name = name;
     this.description = description;
@@ -108,25 +88,29 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     this.completedAt = completedAt;
     this.extInfo = extInfo;
     this.error = error;
-    this.ctx = { ...ctx, addAtomTasks: this.addAtomTasks.bind(this) };
+    if (sharedCtx) {
+      this.ctx = createReadOnlyCtxProxy(sharedCtx);
+    } else {
+      this.ctx = new TaskCtx({
+        addAtomTasks: this.addAtomTasks.bind(this),
+        removeAtomTasks: this.removeAtomTasks.bind(this),
+        defaultData: defaultCtxData,
+      });
+    }
     this.limit = plimit(concurrency);
-    this.promise = new Promise<TaskInfo<ExtInfo>>((res, rej) => {
-      this.resolve = res;
-      this.reject = rej;
-    });
+    const { promise, resolve, reject } = withResolvers<TaskInfo<T, ExtInfo>>();
+    this.promise = promise;
+    this.resolve = resolve;
+    this.reject = reject;
   }
 
-  private static TaskMap = new Map<string, Task>();
+  private static TaskMap = new Map<string, Task<any, any>>();
 
-  static getTask(id: string) {
-    return this.TaskMap.get(id);
+  static getTask<T extends Ctx, ExtInfo = any>(id: string) {
+    return this.TaskMap.get(id) as Task<T, ExtInfo>;
   }
 
-  public getCtx(): TaskCtx<Ctx> {
-    return this.ctx;
-  }
-
-  public getInfo(): TaskInfo<ExtInfo> {
+  public getTaskInfo(): TaskInfo<T, ExtInfo> {
     const {
       id,
       name,
@@ -138,7 +122,9 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       error,
       taskMsg,
       atomTasks,
+      ctx,
     } = this;
+
     return {
       id,
       name,
@@ -150,27 +136,59 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       error,
       taskMsg,
       atomTaskInfoList: atomTasks.map((d) => d.getAtomTaskInfo()),
+      state: ctx.getAllData(),
     };
   }
 
-  public setAtomTasks(atomTasks: AtomTask<Ctx>[]) {
+  public setAtomTasks(atomTasks: AbstractAtomTask<T>[]) {
     if (!Array.isArray(atomTasks)) {
       throw new Error("atomTasks must be an array");
     }
     this.atomTasks = atomTasks;
   }
 
-  public addAtomTasks(atomTasks: AtomTask<Ctx>[]) {
+  public async addAtomTasks(atomTasks: AbstractAtomTask<T>[]) {
     switch (this.status) {
       case TaskStatus.Pending:
-      case TaskStatus.Completed:
         this.atomTasks.push(...atomTasks);
         break;
       case TaskStatus.Running:
-        this.pause().then(() => {
+        if (await this.pause()) {
           this.atomTasks.push(...atomTasks);
           this.resume();
-        });
+        }
+        break;
+      default:
+        throw new Error(`Task status ${this.status} cannot add atom tasks`);
+    }
+  }
+
+  /**
+   * 删除原子任务，仅支持删除pending状态的原子任务
+   * @param taskIds 原子任务id列表
+   */
+  public async removeAtomTasks(taskIds: string[]) {
+    const filterAtomTasks = this.atomTasks.filter((d) => {
+      // 如果任务ID不在要移除的列表中，保留它
+      if (!taskIds.includes(d.id)) {
+        return true;
+      }
+      // 如果任务ID在要移除的列表中，但状态不是Pending，也保留它
+      if (d.status !== AtomTaskStatus.Pending) {
+        return true;
+      }
+      // 其他情况（任务ID在要移除的列表中且状态是Pending），移除它
+      return false;
+    });
+    switch (this.status) {
+      case TaskStatus.Pending:
+        this.setAtomTasks(filterAtomTasks);
+        break;
+      case TaskStatus.Running:
+        if (await this.pause()) {
+          this.setAtomTasks(filterAtomTasks);
+          this.resume();
+        }
         break;
       default:
         throw new Error(`Task status ${this.status} cannot add atom tasks`);
@@ -183,7 +201,7 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
 
   public setPercent(percent: number) {
     this.percent = percent;
-    this.event.emit("progress", { percent, taskInfo: this.getInfo() });
+    this.event.emit("progress", { percent, taskInfo: this.getTaskInfo() });
   }
 
   public setTaskMsg(msg?: string) {
@@ -195,8 +213,8 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       throw new Error("Task is not pending, cannot start");
     }
     this.status = TaskStatus.Running;
-    this.event.emit("start", { taskInfo: this.getInfo() });
-    this.runAtomTasks();
+    this.event.emit("start", { taskInfo: this.getTaskInfo() });
+    return this.runAtomTasks();
   }
 
   public async pause() {
@@ -210,10 +228,10 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       () => true,
       {
         timeout: 60 * 1000,
-      }
+      },
     ).finally(() => {
       this.status = TaskStatus.Paused;
-      this.event.emit("pause", { taskInfo: this.getInfo() });
+      this.event.emit("pause", { taskInfo: this.getTaskInfo() });
     });
   }
 
@@ -222,8 +240,8 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       throw new Error("Task is not paused, cannot resume");
     }
     this.status = TaskStatus.Running;
-    this.event.emit("resume", { taskInfo: this.getInfo() });
-    this.runAtomTasks();
+    this.event.emit("resume", { taskInfo: this.getTaskInfo() });
+    return this.runAtomTasks();
   }
 
   public cancel() {
@@ -234,12 +252,12 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     ];
     if (!validStatus.includes(this.status)) {
       throw new Error(
-        `Task is not in a valid status to cancel: ${this.status}`
+        `Task is not in a valid status to cancel: ${this.status}`,
       );
     }
     this.limit.clearQueue();
     this.status = TaskStatus.Cancel;
-    this.event.emit("cancel", { taskInfo: this.getInfo() });
+    this.event.emit("cancel", { taskInfo: this.getTaskInfo() });
     this.reject?.("cancel");
   }
 
@@ -247,12 +265,12 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     const validStatus: TaskStatus[] = [TaskStatus.Failed, TaskStatus.Cancel];
     if (!validStatus.includes(this.status)) {
       throw new Error(
-        `Task is not in a valid status to restart: ${this.status}`
+        `Task is not in a valid status to restart: ${this.status}`,
       );
     }
     this.status = TaskStatus.Running;
-    this.event.emit("restart", { taskInfo: this.getInfo() });
-    this.runAtomTasks({ restart: true });
+    this.event.emit("restart", { taskInfo: this.getTaskInfo() });
+    return this.runAtomTasks({ restart: true });
   }
 
   public failed(error: Error | string) {
@@ -262,9 +280,10 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     this.status = TaskStatus.Failed;
     const errObj = typeof error === "string" ? new Error(error) : error;
     this.error = { name: errObj.name, message: errObj.message };
+    this.taskMsg = errObj.message;
     this.event.emit("error", {
       error: errObj,
-      taskInfo: this.getInfo(),
+      taskInfo: this.getTaskInfo(),
     });
     this.clear();
     this.reject?.("error");
@@ -277,9 +296,9 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     this.percent = 100;
     this.status = TaskStatus.Completed;
     this.completedAt = Date.now();
-    this.event.emit("complete", { taskInfo: this.getInfo() });
+    this.event.emit("complete", { taskInfo: this.getTaskInfo() });
     this.clear();
-    this.resolve?.(this.getInfo());
+    this.resolve?.(this.getTaskInfo());
   }
 
   public remove() {
@@ -290,12 +309,12 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     ];
     if (!validStatus.includes(this.status)) {
       throw new Error(
-        `Task is not in a valid status to remove: ${this.status}`
+        `Task is not in a valid status to remove: ${this.status}`,
       );
     }
     this.status = TaskStatus.Removed;
     Task.TaskMap.delete(this.id);
-    this.event.emit("remove", { taskInfo: this.getInfo() });
+    this.event.emit("remove", { taskInfo: this.getTaskInfo() });
     this.clear();
   }
 
@@ -303,7 +322,7 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     return this.promise;
   }
 
-  private clear() {
+  protected clear() {
     if (this.limit.activeCount > 0 || this.limit.pendingCount > 0) {
       this.limit.clearQueue();
     }
@@ -315,7 +334,7 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
     }, 1000);
   }
 
-  private runAtomTasks({
+  protected async runAtomTasks({
     restart = false,
   }: {
     restart?: boolean;
@@ -326,19 +345,23 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
       const atomTasks = restart
         ? this.atomTasks
         : this.atomTasks.filter(
-            (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Pending
+            (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Pending,
           );
       const input = atomTasks.map((atomTask) =>
         this.limit(() =>
           atomTask
             .run(this.ctx)
-            .then(({ status }) => {
+            .then(({ status, errorMsg, successMsg }) => {
               switch (status) {
                 case AtomTaskStatus.Completed:
-                  this.setTaskMsg(atomTask.getAtomTaskInfo().successMsg);
+                  this.setTaskMsg(successMsg);
                   break;
                 case AtomTaskStatus.Failed:
-                  this.setTaskMsg(atomTask.getAtomTaskInfo().errorMsg);
+                  this.setTaskMsg(errorMsg);
+                  this.failed({
+                    name: "AtomTask failed",
+                    message: errorMsg ?? "Failed",
+                  });
                   break;
                 default:
                   break;
@@ -350,15 +373,15 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
                */
               const finishCount = atomTasks.filter(
                 (task) =>
-                  task.getAtomTaskInfo().status === AtomTaskStatus.Completed
+                  task.getAtomTaskInfo().status === AtomTaskStatus.Completed,
               ).length;
               this.setPercent((finishCount / atomTasksCount) * 100);
-            })
-        )
+            }),
+        ),
       );
-      Promise.all(input).finally(() => {
+      return Promise.all(input).finally(() => {
         const failedTasks = atomTasks.filter(
-          (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Failed
+          (task) => task.getAtomTaskInfo().status === AtomTaskStatus.Failed,
         );
         if (this.status === TaskStatus.Running) {
           if (failedTasks.length === 0) {
@@ -367,11 +390,12 @@ export class Task<Ctx extends Record<string, any> = any, ExtInfo = any> {
             this.failed(
               failedTasks
                 .map((task) => task.getAtomTaskInfo().errorMsg)
-                .join(", ")
+                .join(", "),
             );
           }
         }
       });
     }
+    return [];
   }
 }

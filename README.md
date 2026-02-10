@@ -18,6 +18,7 @@ task-runner-plus 是一个轻量级的任务执行器库，用于实现任务的
 - ✅ **事件监听**：提供丰富的事件钩子，方便监听任务状态变化
 - ✅ **原子任务**：支持将复杂任务拆分为多个原子任务执行
 - ✅ **TypeScript 支持**：完整的 TypeScript 类型定义
+- ✅ **动态原子任务**：支持在任务执行过程中动态添加和移除原子任务
 
 ## 安装
 
@@ -123,7 +124,7 @@ task.start();
 
 ### Task 类
 
-#### 构造函数
+#### Task 构造函数
 
 ```typescript
 new Task(params?: Partial<TaskInfo>, options?: TaskOptions)
@@ -229,7 +230,7 @@ const task = new Task(
         // 自定义方法
       },
     },
-  }
+  },
 );
 
 task.setAtomTasks([
@@ -243,7 +244,7 @@ task.setAtomTasks([
     {
       processMsg: "正在获取用户数据...",
       successMsg: "用户数据获取成功",
-    }
+    },
   ),
 ]);
 
@@ -254,7 +255,7 @@ task.start();
 
 原子任务是 Task 的执行单元，用于将复杂任务拆分为多个可管理的子任务。每个原子任务可以独立配置重试、超时等选项。
 
-#### 构造函数
+#### AtomTask 构造函数
 
 ```typescript
 new AtomTask<Ctx>(
@@ -298,12 +299,13 @@ type AtomTaskExec<Ctx> = (input: {
 
 #### 原子任务状态
 
-| 状态名      | 描述     |
-| ----------- | -------- |
-| `PENDING`   | 等待执行 |
-| `RUNNING`   | 正在执行 |
-| `COMPLETED` | 执行完成 |
-| `FAILED`    | 执行失败 |
+| 状态名      | 描述                   |
+| ----------- | ---------------------- |
+| `PENDING`   | 等待执行               |
+| `RUNNING`   | 正在执行               |
+| `COMPLETED` | 执行完成               |
+| `FAILED`    | 执行失败               |
+| `WARNING`   | 警告状态，任务继续执行 |
 
 #### 原子任务信息
 
@@ -316,14 +318,51 @@ type AtomTaskExec<Ctx> = (input: {
 | `successMsg` | string?  | 成功完成后的提示信息 |
 | `errorMsg`   | string?  | 失败时的错误提示信息 |
 
-#### 方法
+#### AtomTask 方法
 
 | 方法名              | 描述             | 参数                | 返回值                  |
 | ------------------- | ---------------- | ------------------- | ----------------------- |
 | `getAtomTaskInfo()` | 获取原子任务信息 | 无                  | `AtomTaskInfo`          |
 | `run(ctx)`          | 执行原子任务     | `ctx: TaskCtx<Ctx>` | `Promise<AtomTaskInfo>` |
 
-### 动态添加原子任务
+### 任务消息支持函数调用上下文
+
+任务消息支持函数形式，可访问执行上下文：
+
+```typescript
+import { Task, AtomTask } from "task-runner-plus";
+
+const task = new Task({ name: "Message Function Example" });
+
+// 设置带有函数形式消息的原子任务
+task.setAtomTasks([
+  new AtomTask({
+    exec: async ({ ctx }) => {
+      // 在上下文中存储数据
+      ctx.set("userId", 123);
+      ctx.set("userName", "John Doe");
+      await new Promise((r) => setTimeout(r, 1000));
+    },
+    // 函数形式的processMsg，可访问ctx
+    processMsg: (ctx) => {
+      const userId = ctx.get("userId") || "unknown";
+      return `正在处理用户 ${userId} 的任务...`;
+    },
+    // 函数形式的successMsg，可访问ctx
+    successMsg: (ctx) => {
+      const userName = ctx.get("userName") || "unknown";
+      return `用户 ${userName} 的任务处理完成`;
+    },
+  }),
+]);
+
+// 启动任务
+task.start();
+```
+
+### 动态原子任务
+
+#### 动态添加原子任务
 
 支持在任务执行过程中动态添加新的原子任务：
 
@@ -361,6 +400,51 @@ task.event.on("complete", () => {
 task.start();
 ```
 
+#### 动态移除原子任务
+
+支持在任务执行过程中动态移除原子任务：
+
+```typescript
+import { Task, AtomTask } from "task-runner-plus";
+
+const task = new Task({ name: "动态移除任务示例" });
+
+// 创建原子任务
+const atomTask1 = new AtomTask({
+  exec: async ({ signal }) => {
+    console.log("执行第一个任务");
+    await new Promise((r) => setTimeout(r, 2000)); // 模拟耗时操作
+  },
+  processMsg: "正在执行第一个任务...",
+  successMsg: "第一个任务完成",
+});
+
+const atomTask2 = new AtomTask({
+  exec: async ({ signal }) => {
+    console.log("执行第二个任务");
+    await new Promise((r) => setTimeout(r, 1000));
+  },
+  processMsg: "正在执行第二个任务...",
+  successMsg: "第二个任务完成",
+});
+
+// 设置原子任务
+task.setAtomTasks([atomTask1, atomTask2]);
+
+// 启动任务
+task.start();
+
+// 等待一段时间后移除第二个任务
+setTimeout(async () => {
+  console.log("移除第二个任务");
+  await task.removeAtomTasks([atomTask2.id]);
+}, 500);
+
+// 等待任务完成
+await task.waitForEnd();
+// 只有第一个任务会执行完成，第二个任务会被移除
+```
+
 ### promiseFor
 
 等待条件满足后返回结果的工具函数：
@@ -369,7 +453,7 @@ task.start();
 function promiseFor<T>(
   condition: () => boolean,
   result: () => T,
-  options?: { timeout?: number; delay?: number }
+  options?: { timeout?: number; delay?: number },
 ): Promise<T>;
 ```
 
@@ -391,14 +475,14 @@ import { promiseFor } from "task-runner-plus";
 const element = await promiseFor(
   () => document.querySelector("#my-element") !== null,
   () => document.querySelector("#my-element"),
-  { timeout: 5000, delay: 100 }
+  { timeout: 5000, delay: 100 },
 );
 
 // 等待异步数据加载完成
 const data = await promiseFor(
   () => store.isLoaded,
   () => store.data,
-  { timeout: 10000 }
+  { timeout: 10000 },
 );
 ```
 
@@ -407,25 +491,25 @@ const data = await promiseFor(
 ### 安装依赖
 
 ```bash
-$ pnpm install
+pnpm install
 ```
 
 ### 开发模式
 
 ```bash
-$ pnpm run dev
+pnpm run dev
 ```
 
 ### 构建
 
 ```bash
-$ pnpm run build
+pnpm run build
 ```
 
 ### 运行测试
 
 ```bash
-$ pnpm run test
+pnpm run test
 ```
 
 ## 许可证
