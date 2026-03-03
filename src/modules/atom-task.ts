@@ -7,6 +7,7 @@ import {
   AbstractAtomTask,
   AbstractTaskCtx,
   AtomTaskStatus,
+  type AtomTaskErrorMessage,
   type AtomTaskExec,
   type AtomTaskInfo,
   type AtomTaskInit,
@@ -29,7 +30,7 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
   /**
    * 错误消息或错误消息渲染函数
    */
-  protected errorMsg?: AtomTaskMessage<T>;
+  protected errorMsg?: AtomTaskErrorMessage<T>;
   /**
    * 处理消息或处理消息渲染函数
    */
@@ -45,6 +46,7 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
   protected retryCancel = new AbortController();
   protected exec: AtomTaskExec<T>;
   protected options: Required<AtomTaskOptions>;
+  protected error?: Error;
   constructor(
     {
       exec,
@@ -130,14 +132,17 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
         this.status = AtomTaskStatus.Completed;
       }
     } catch (error) {
+      this.error = error as Error;
       this.status = AtomTaskStatus.Failed;
     }
     return this.getAtomTaskInfo();
   }
 
-  protected renderMessage(message?: AtomTaskMessage<T>) {
+  protected renderMessage(
+    message?: AtomTaskMessage<T> | AtomTaskErrorMessage<T>,
+  ) {
     if (isFunction(message) && !!this.ctx) {
-      return message(this.ctx);
+      return message(this.ctx, this.error as Error);
     }
     if (typeof message === "string") {
       return message;

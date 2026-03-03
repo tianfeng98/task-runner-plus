@@ -505,6 +505,38 @@ describe("Task类测试", () => {
       );
     });
 
+    it("应该能够处理errorMsg为函数的情况（抛出异常）", async () => {
+      const task = new Task({});
+      let taskExecuted = false;
+      const errorInfo = "Atom task failed";
+      const atomTasks = [
+        new AtomTask({
+          exec: async () => {
+            taskExecuted = true;
+            throw new Error(errorInfo);
+          },
+          errorMsg: (_, error) => {
+            return error.message;
+          },
+        }),
+      ];
+
+      task.setAtomTasks(atomTasks);
+      task.start();
+
+      // 等待任务完成并处理可能的Promise拒绝
+      try {
+        await task.waitForEnd();
+      } catch {
+        // 忽略预期的拒绝
+      }
+
+      assert.strictEqual(taskExecuted, true);
+      assert.strictEqual(task.status, TaskStatus.Failed);
+      // 验证错误消息
+      assert.strictEqual(atomTasks[0].getAtomTaskInfo().errorMsg, errorInfo);
+    });
+
     it("应该能够处理warningMsg为函数的情况", async () => {
       const task = new Task({});
       let taskExecuted = false;

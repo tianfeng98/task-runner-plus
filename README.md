@@ -259,12 +259,7 @@ task.start();
 
 ```typescript
 new AtomTask<Ctx>(
-  config: {
-    exec: AtomTaskExec<Ctx>;
-    processMsg?: string;
-    successMsg?: string;
-    errorMsg?: string;
-  },
+  config: AtomTaskInit<Ctx>,
   options?: AtomTaskOptions
 )
 ```

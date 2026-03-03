@@ -33,7 +33,7 @@ export abstract class AbstractAtomTask<T extends Ctx> {
   /**
    * 错误消息或错误消息渲染函数
    */
-  protected abstract errorMsg?: AtomTaskMessage<T>;
+  protected abstract errorMsg?: AtomTaskErrorMessage<T>;
   /**
    * 处理消息或处理消息渲染函数
    */
@@ -72,6 +72,10 @@ export type AtomTaskExec<T extends Ctx> = (input: {
 
 export type AtomTaskMessage<T extends Ctx> =
   | ((ctx: AbstractTaskCtx<T>) => string)
+  | string;
+
+export type AtomTaskErrorMessage<T extends Ctx> =
+  | ((ctx: AbstractTaskCtx<T>, error: Error) => string)
   | string;
 
 export interface TaskOptions<T extends Ctx> {
@@ -154,7 +158,7 @@ export abstract class AbstractTask<T extends Ctx, ExtInfo = any> {
 export interface AtomTaskInit<T extends Ctx> {
   exec: AtomTaskExec<T>;
   id?: string;
-  errorMsg?: AtomTaskMessage<T>;
+  errorMsg?: AtomTaskErrorMessage<T>;
   processMsg?: AtomTaskMessage<T>;
   warningMsg?: AtomTaskMessage<T>;
   successMsg?: AtomTaskMessage<T>;
