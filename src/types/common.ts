@@ -23,10 +23,11 @@ export interface AtomTaskOptions {
   timeoutOption?: number;
 }
 
-export type AtomTaskExecResult =
-  | AtomTaskStatus.Completed
-  | AtomTaskStatus.Failed
-  | AtomTaskStatus.Warning;
+export enum AtomTaskExecResult {
+  Completed = AtomTaskStatus.Completed,
+  Failed = AtomTaskStatus.Failed,
+  Warning = AtomTaskStatus.Warning,
+}
 
 export enum TaskStatus {
   Pending = "PENDING",

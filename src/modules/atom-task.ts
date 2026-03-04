@@ -6,6 +6,7 @@ import { isFunction, retry, uid } from "radashi";
 import {
   AbstractAtomTask,
   AbstractTaskCtx,
+  AtomTaskExecResult,
   AtomTaskStatus,
   type AtomTaskErrorMessage,
   type AtomTaskExec,
@@ -112,13 +113,13 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
             asyncExec()
               .then((result) => {
                 switch (result) {
-                  case AtomTaskStatus.Completed:
+                  case AtomTaskExecResult.Completed:
                     this.status = AtomTaskStatus.Completed;
                     break;
-                  case AtomTaskStatus.Warning:
+                  case AtomTaskExecResult.Warning:
                     this.status = AtomTaskStatus.Warning;
                     break;
-                  case AtomTaskStatus.Failed:
+                  case AtomTaskExecResult.Failed:
                     this.status = AtomTaskStatus.Failed;
                     break;
                 }
