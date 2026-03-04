@@ -7,7 +7,7 @@ type TimeoutInl = string | number | NodeJS.Timeout | undefined;
  * @param error
  * @returns
  */
-export const timeout = <TError extends Error>(
+export const promiseTimeout = <TError extends Error>(
   /**
  /**
  * The number of milliseconds to wait before rejecting.

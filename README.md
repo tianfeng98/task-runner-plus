@@ -272,7 +272,7 @@ new AtomTask<Ctx>(
 - `config.errorMsg`：任务失败时的错误提示信息
 - `options.retryTimes`：重试次数，默认 3
 - `options.retryDelay`：重试延迟（毫秒），默认 1000
-- `options.timeoutOption`：超时时间（毫秒），默认 60000
+- `options.timeout`：超时时间（毫秒），默认 60000
 
 #### 原子任务执行函数
 

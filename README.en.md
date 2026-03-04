@@ -284,7 +284,7 @@ new AtomTask<Ctx>(
 - `config.errorMsg`: Error message displayed on failure
 - `options.retryTimes`: Number of retries, default 3
 - `options.retryDelay`: Retry delay in milliseconds, default 1000
-- `options.timeoutOption`: Timeout in milliseconds, default 60000
+- `options.timeout`: Timeout in milliseconds, default 60000
 
 #### Atomic Task Execution Function
 

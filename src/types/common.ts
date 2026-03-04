@@ -20,7 +20,7 @@ export interface AtomTaskInfo {
 export interface AtomTaskOptions {
   retryTimes?: number;
   retryDelay?: number;
-  timeoutOption?: number;
+  timeout?: number;
 }
 
 export enum AtomTaskExecResult {

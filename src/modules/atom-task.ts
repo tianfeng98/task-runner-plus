@@ -16,12 +16,12 @@ import {
   type AtomTaskOptions,
   type Ctx,
 } from "../types";
-import { timeout } from "../utils";
+import { promiseTimeout } from "../utils";
 
 const defaultOptions: Required<AtomTaskOptions> = {
   retryTimes: 3,
   retryDelay: 1000,
-  timeoutOption: 60 * 1000,
+  timeout: 60 * 1000,
 };
 
 export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
@@ -81,7 +81,7 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
   }
 
   public async run(ctx: AbstractTaskCtx<T>) {
-    const { retryDelay, retryTimes, timeoutOption } = this.options;
+    const { retryDelay, retryTimes, timeout } = this.options;
     this.status = AtomTaskStatus.Running;
     /**
      * 记录执行次数
@@ -98,7 +98,7 @@ export class AtomTask<T extends Ctx> extends AbstractAtomTask<T> {
         (exit) => {
           execCount += 1;
           const cancel = new AbortController();
-          const [timeoutPromise, timeoutClear] = timeout(timeoutOption, () => {
+          const [timeoutPromise, timeoutClear] = promiseTimeout(timeout, () => {
             cancel.abort();
             return new Error("timeout");
           });
